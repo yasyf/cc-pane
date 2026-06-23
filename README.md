@@ -3,7 +3,7 @@
 ![cc-pane banner](docs/assets/readme-banner.webp)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yasyf/cc-pane/ci.yml?branch=main&label=CI)](https://github.com/yasyf/cc-pane/actions/workflows/ci.yml)
-[![License: PolyForm-Noncommercial-1.0.0](https://img.shields.io/badge/License-PolyForm-Noncommercial-1.0.0-blue.svg)](https://github.com/yasyf/cc-pane/blob/main/LICENSE)
+[![License: PolyForm-Noncommercial-1.0.0](https://img.shields.io/badge/License-PolyForm--Noncommercial--1.0.0-blue.svg)](https://github.com/yasyf/cc-pane/blob/main/LICENSE)
 
 Single pane of glass for Claude Code and all the cc-* helpers.
 

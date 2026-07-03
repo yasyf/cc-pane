@@ -1,7 +1,7 @@
 {
   "name": "cc-pane",
   "version": "0.1.0",
-  "description": "Single pane of glass for Claude Code and all the cc-* helpers.",
+  "description": "One of your Claude sessions is waiting on you right now.",
   "license": "PolyForm-Noncommercial-1.0.0",
   "author": "Yasyf Mohamedali <yasyfm@gmail.com>",
   "repository": "github:yasyf/cc-pane",

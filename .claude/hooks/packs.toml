@@ -1,7 +1,9 @@
 [packs.cc-notes]
 source = "github:yasyf/cc-notes@latest"
 
+[packs.fixes]
+
 [packs.general]
 
-
 [packs.steering]
+

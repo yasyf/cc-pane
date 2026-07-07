@@ -43,7 +43,7 @@ Five Claude Code sessions means five terminal tabs, and the one stuck on a permi
 bun start
 ```
 
-One frame, every session, status first. Today that frame is the placeholder from Get started; the cmux session list is milestone one.
+One frame, every session, status first. Today that frame is the placeholder from Get started.
 
 ### Swap cmux for superset or tmux without relearning your cockpit
 
@@ -65,6 +65,6 @@ The suite captures the char frame through OpenTUI's test renderer, so any backen
 
 A Bun + OpenTUI app. Each cc-* helper for reviews, transcripts, and pools plugs its per-session meta into the pane instead of shipping its own front end. The pane is the shared cockpit they all render into.
 
-Still early days. The dashboard renders the placeholder frame; backend orchestration (cmux first) is milestone one.
+Still early days. Backend orchestration (cmux first) is milestone one.
 
 Licensed under [PolyForm Noncommercial 1.0.0](LICENSE).

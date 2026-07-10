@@ -1,0 +1,5 @@
+fragments = [
+  "cc-pane-development-guide",
+  "cc-skills:ccx",
+  "style",
+]

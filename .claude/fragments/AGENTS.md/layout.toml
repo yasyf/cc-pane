@@ -1,0 +1,14 @@
+fragments = [
+  "cc-pane-development-guide",
+  "cc-skills:ask-before-assuming",
+  "cc-skills:code-review-response",
+  "cc-skills:parallelize",
+  "cc-skills:writing-plans",
+  "cc-skills:ccx",
+  "cc-pane-style",
+  "cc-pane-hook-style",
+  "cc-skills:version-control",
+]
+
+[sources.cc-skills]
+source = "github:yasyf/cc-skills@main"

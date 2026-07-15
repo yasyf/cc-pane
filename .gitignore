@@ -1,0 +1,22 @@
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local environment
+.env*
+
+# Claude Code
+.context/
+.claude-scratch/
+.scratch/
+.claude/worktrees/
+.claude/settings.local.json
+
+# Bun
+node_modules/
+
+# Python bytecode (guard hooks are Python even in non-Python repos)
+__pycache__/
+*.py[cod]

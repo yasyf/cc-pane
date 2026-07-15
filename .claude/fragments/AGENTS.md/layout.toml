@@ -1,8 +1,0 @@
-fragments = [
-  "cc-pane-development-guide",
-  "cc-skills:ccx",
-  "style",
-]
-
-[sources.cc-skills]
-source = "github:yasyf/cc-skills@main"

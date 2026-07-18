@@ -2,11 +2,25 @@
 // per attempt, waking the daemon and retrying once on a missing file or connection failure.
 
 import { join } from "node:path"
-import { type Capture, type FleetStatus, parseCapture, parseFleetStatus } from "../model.ts"
+import {
+  type Capture,
+  type FleetStatus,
+  type KillResult,
+  type MessageReceipt,
+  type RespawnResult,
+  parseCapture,
+  parseFleetStatus,
+  parseKillResult,
+  parseMessageReceipt,
+  parseRespawnResult,
+} from "../model.ts"
 
 const PORT_FILE = ".cc-orchestrate/http.json"
 const FLEET_STATUS_METHOD = "cco.fleet.status"
 const AGENT_CAPTURE_METHOD = "cco.agent.capture"
+const AGENT_KILL_METHOD = "cco.agent.kill"
+const AGENT_SEND_MESSAGE_METHOD = "cco.agent.sendMessage"
+const AGENT_RESPAWN_METHOD = "cco.agent.respawn"
 const CONFLICT_CODE = "Conflict"
 
 export interface CcoClientDeps {
@@ -98,6 +112,20 @@ export class CcoClient {
     }
   }
 
+  async kill(agentId: string): Promise<KillResult> {
+    return this.runWithWake(AGENT_KILL_METHOD, () => this.attemptPost(AGENT_KILL_METHOD, { agent_id: agentId }, parseKillResult))
+  }
+
+  async sendMessage(agentId: string, text: string): Promise<MessageReceipt> {
+    return this.runWithWake(AGENT_SEND_MESSAGE_METHOD, () =>
+      this.attemptPost(AGENT_SEND_MESSAGE_METHOD, { agent_id: agentId, text }, parseMessageReceipt),
+    )
+  }
+
+  async respawn(agentId: string): Promise<RespawnResult> {
+    return this.runWithWake(AGENT_RESPAWN_METHOD, () => this.attemptPost(AGENT_RESPAWN_METHOD, { agent_id: agentId }, parseRespawnResult))
+  }
+
   private async readPort(): Promise<number> {
     const file = Bun.file(join(this.homeDir, PORT_FILE))
     let text: string
@@ -109,9 +137,9 @@ export class CcoClient {
     return parsePort(JSON.parse(text))
   }
 
-  private async fetchOrUnreachable(url: string): Promise<Response> {
+  private async fetchOrUnreachable(url: string, init?: RequestInit): Promise<Response> {
     try {
-      return await this.fetchFn(url)
+      return await this.fetchFn(url, init)
     } catch {
       throw new Unreachable()
     }
@@ -127,18 +155,36 @@ export class CcoClient {
     throw new XrpcError(envelope.error, res.status, envelope.message)
   }
 
-  private async call<T>(method: string, params: Record<string, string>, parse: (raw: unknown) => T): Promise<T> {
+  private async attemptPost<T>(method: string, body: Record<string, string>, parse: (raw: unknown) => T): Promise<T> {
+    const port = await this.readPort()
+    const url = `http://127.0.0.1:${port}/xrpc/${method}`
+    const res = await this.fetchOrUnreachable(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    if (res.ok) return parse(await res.json())
+    const envelope = parseErrorEnvelope(await res.json())
+    throw new XrpcError(envelope.error, res.status, envelope.message)
+  }
+
+  // Wake-once/retry discipline shared by GET (attempt) and POST (attemptPost) thunks.
+  private async runWithWake<T>(method: string, attempt: () => Promise<T>): Promise<T> {
     try {
-      return await this.attempt(method, params, parse)
+      return await attempt()
     } catch (err) {
       if (!(err instanceof Unreachable)) throw err
     }
     await this.wake()
     try {
-      return await this.attempt(method, params, parse)
+      return await attempt()
     } catch (err) {
       if (err instanceof Unreachable) throw new DaemonUnreachableError(method)
       throw err
     }
+  }
+
+  private async call<T>(method: string, params: Record<string, string>, parse: (raw: unknown) => T): Promise<T> {
+    return this.runWithWake(method, () => this.attempt(method, params, parse))
   }
 }

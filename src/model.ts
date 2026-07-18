@@ -104,6 +104,19 @@ export interface Capture {
   readonly capturedAt: string
 }
 
+export interface KillResult {
+  readonly id: string
+  readonly status: LifecycleStatus
+}
+
+export interface MessageReceipt {
+  readonly seq: number
+}
+
+export interface RespawnResult {
+  readonly respawned: readonly AgentView[]
+}
+
 export interface NotesEntity {
   readonly kind: string
   readonly id: string
@@ -284,6 +297,29 @@ export function parseCapture(raw: unknown): Capture {
     id: asString(o.id, "capture.id"),
     content: asString(o.content, "capture.content"),
     capturedAt: asString(o.captured_at, "capture.captured_at"),
+  }
+}
+
+export function parseKillResult(raw: unknown): KillResult {
+  const o = asObject(raw, "killResult")
+  return {
+    id: asString(o.id, "killResult.id"),
+    status: oneOf(LIFECYCLE_STATUSES, o.status, "killResult.status"),
+  }
+}
+
+export function parseMessageReceipt(raw: unknown): MessageReceipt {
+  const o = asObject(raw, "messageReceipt")
+  return {
+    seq: asNumber(o.seq, "messageReceipt.seq"),
+  }
+}
+
+// `failed` is ignored: the single-id form reports failure as a Conflict envelope.
+export function parseRespawnResult(raw: unknown): RespawnResult {
+  const o = asObject(raw, "respawnResult")
+  return {
+    respawned: asArray(o.respawned, "respawnResult.respawned").map((a, i) => parseAgent(a, `respawnResult.respawned[${i}]`)),
   }
 }
 

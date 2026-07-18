@@ -15,24 +15,43 @@ import {
 
 import { AgentView } from "./views/agent.ts"
 import { FleetView } from "./views/fleet.ts"
+import { ConfirmModal } from "./components/confirm.ts"
+import { PromptRenderable } from "./components/prompt.ts"
 import { NotesUnavailableError } from "./data/ccnotes.ts"
 import { DaemonUnreachableError } from "./data/cco.ts"
 import { Poller, systemClock, type PollerClock } from "./data/poller.ts"
 import { formatAge } from "./format.ts"
-import { agentRepoChain, type AgentRepoChain, type Capture, type FleetStatus, type NotesGraph } from "./model.ts"
+import {
+  agentRepoChain,
+  type AgentRepoChain,
+  type AgentView as ModelAgentView,
+  type Capture,
+  type FleetStatus,
+  type KillResult,
+  type MessageReceipt,
+  type NotesGraph,
+  type RespawnResult,
+} from "./model.ts"
 import { AGENT_STATE_COLORS, AGENT_STATE_GLYPHS, BADGE_STATE_ORDER } from "./theme.ts"
 
 const OK_COLOR = "#3fb950"
 const ALERT_COLOR = "#f85149"
-const FLEET_FOOTER = "enter drill · tab pane · j/k move · q quit"
-const AGENT_FOOTER = "esc back · s snapshot · a all-repo events · j/k scroll · q quit"
+const FLASH_COLOR = "#d29922"
+const FLEET_FOOTER = "enter drill · tab pane · j/k move · x kill · m msg · r respawn · t attach · q quit"
+const AGENT_FOOTER = "esc back · s snap · a filter · j/k scroll · x kill · m msg · r respawn · t attach · q quit"
 
 export type View = { readonly view: "fleet" } | { readonly view: "agent"; readonly agentId: string }
+
+// Runs `cco agent attach <id>` with the real TTY; the exit code + stderr drive the flash.
+export type AttachFn = (agentId: string) => Promise<{ readonly code: number; readonly stderr: string }>
 
 // Structural sources so tests inject fakes; CcoClient and VizPool are assignable as-is.
 export interface FleetSource {
   fleetStatus(): Promise<FleetStatus>
   capture(agentId: string): Promise<Capture>
+  kill(agentId: string): Promise<KillResult>
+  sendMessage(agentId: string, text: string): Promise<MessageReceipt>
+  respawn(agentId: string): Promise<RespawnResult>
 }
 export interface GraphServer {
   graph(): Promise<NotesGraph>
@@ -45,11 +64,20 @@ export interface GraphSource {
 export interface AppDeps {
   readonly cco: FleetSource
   readonly viz: GraphSource
+  readonly attach: AttachFn
   readonly pollIntervalMs: number
   readonly timeZone: string
   readonly onQuit: () => void
   readonly clock?: PollerClock
 }
+
+// An orthogonal overlay over the live view: it never bumps viewEpoch, so closing restores
+// the selection/scroll beneath it. `attach` swallows all keys and guards re-entry.
+type Overlay =
+  | { readonly kind: "none" }
+  | { readonly kind: "confirm"; readonly action: "kill" | "respawn"; readonly agent: ModelAgentView; readonly modal: ConfirmModal }
+  | { readonly kind: "prompt"; readonly agent: ModelAgentView; readonly prompt: PromptRenderable }
+  | { readonly kind: "attach" }
 
 export interface AppHandle {
   refreshFleet(): Promise<void>
@@ -81,6 +109,8 @@ class App {
   private readonly onKeypress: (event: KeyEvent) => void
 
   private state: View = { view: "fleet" }
+  private overlay: Overlay = { kind: "none" }
+  private flash: string | null = null
   private lastFleet: FleetStatus | null = null
   private lastSuccessAt: number | null = null
   private daemon: DaemonState = { kind: "pending" }
@@ -116,9 +146,13 @@ class App {
     this.fleetPoller.start()
 
     this.onKeypress = (event) => {
-      if (event.ctrl && event.name === "c") return this.route("q")
+      if (event.ctrl && event.name === "c") return this.deps.onQuit()
       if (event.ctrl || event.meta || event.option) return
+      // A key that opens the prompt focuses its input mid-dispatch; veto so keyInput's
+      // renderable phase doesn't deliver that same key into the freshly-focused input.
+      const wasPrompt = this.overlay.kind === "prompt"
       this.route(event.name)
+      if (!wasPrompt && this.overlay.kind === "prompt") event.preventDefault()
     }
     renderer.keyInput.on("keypress", this.onKeypress)
 
@@ -135,6 +169,22 @@ class App {
   }
 
   route(keyName: string): void {
+    if (this.flash !== null) {
+      this.flash = null
+      this.renderFooter()
+      this.renderer.requestRender()
+    }
+    const overlay = this.overlay
+    switch (overlay.kind) {
+      case "confirm":
+        return this.routeConfirm(overlay, keyName)
+      case "prompt":
+        return this.routePrompt(keyName)
+      case "attach":
+        return
+      case "none":
+        break
+    }
     if (keyName === "q") {
       this.deps.onQuit()
       return
@@ -164,6 +214,14 @@ class App {
         return this.fleetView.moveSelection(-1)
       case "return":
         return this.fleetView.activate()
+      case "x":
+        return this.tryKill()
+      case "m":
+        return this.tryMessage()
+      case "r":
+        return this.tryRespawn()
+      case "t":
+        return this.tryAttach()
     }
   }
 
@@ -181,7 +239,164 @@ class App {
       case "k":
       case "up":
         return this.agentView?.moveSelection(-1)
+      case "x":
+        return this.tryKill()
+      case "m":
+        return this.tryMessage()
+      case "r":
+        return this.tryRespawn()
+      case "t":
+        return this.tryAttach()
     }
+  }
+
+  // Confirm: y/return confirm, n/escape cancel, else swallowed.
+  private routeConfirm(overlay: Extract<Overlay, { kind: "confirm" }>, keyName: string): void {
+    if (keyName === "y" || keyName === "return") {
+      this.closeOverlay()
+      void this.runAction(overlay.action, overlay.agent)
+      return
+    }
+    if (keyName === "n" || keyName === "escape") this.closeOverlay()
+  }
+
+  // Escape only; typed chars and Enter fall through to the focused input (return would double-fire).
+  private routePrompt(keyName: string): void {
+    if (keyName === "escape") this.closeOverlay()
+  }
+
+  // The drilled-in agent, else the selected fleet-tree row, resolved against lastFleet.
+  private actionTarget(): ModelAgentView | null {
+    const id = this.state.view === "agent" ? this.state.agentId : this.fleetView.selectedAgentId()
+    if (id === undefined || this.lastFleet === null) return null
+    return this.lastFleet.agents.find((a) => a.id === id) ?? null
+  }
+
+  private tryKill(): void {
+    const agent = this.actionTarget()
+    if (agent === null) return this.setFlash("no agent selected")
+    if (agent.status !== "active") return this.setFlash("kill: agent not active")
+    this.openConfirm("kill", agent)
+  }
+
+  private tryMessage(): void {
+    const agent = this.actionTarget()
+    if (agent === null) return this.setFlash("no agent selected")
+    if (agent.status !== "active") return this.setFlash("message: agent not active")
+    this.openPrompt(agent)
+  }
+
+  private tryRespawn(): void {
+    const agent = this.actionTarget()
+    if (agent === null) return this.setFlash("no agent selected")
+    if (agent.status !== "exited") return this.setFlash("respawn: agent not exited")
+    this.openConfirm("respawn", agent)
+  }
+
+  private tryAttach(): void {
+    const agent = this.actionTarget()
+    if (agent === null) return this.setFlash("no agent selected")
+    if (agent.status !== "active") return this.setFlash("attach: agent not active")
+    if (agent.backend !== "tmux" && agent.backend !== "zellij") return this.setFlash("attach: agent not attachable")
+    void this.runAttach(agent)
+  }
+
+  private openConfirm(action: "kill" | "respawn", agent: ModelAgentView): void {
+    const modal = new ConfirmModal(this.renderer, {
+      id: "confirm-overlay",
+      title: `${action} agent`,
+      message: `${action} ${agent.name}?`,
+    })
+    this.renderer.root.add(modal)
+    this.overlay = { kind: "confirm", action, agent, modal }
+    this.renderer.requestRender()
+  }
+
+  private openPrompt(agent: ModelAgentView): void {
+    const prompt = new PromptRenderable(this.renderer, {
+      id: "prompt-overlay",
+      title: `message ${agent.name}`,
+      onSubmit: (value) => this.submitMessage(agent, value),
+    })
+    this.renderer.root.add(prompt)
+    prompt.open()
+    this.overlay = { kind: "prompt", agent, prompt }
+    this.renderer.requestRender()
+  }
+
+  private submitMessage(agent: ModelAgentView, text: string): void {
+    this.closeOverlay()
+    if (text === "") return
+    void this.runMessage(agent, text)
+  }
+
+  private closeOverlay(): void {
+    const overlay = this.overlay
+    if (overlay.kind === "confirm") {
+      this.renderer.root.remove(overlay.modal)
+      overlay.modal.destroy()
+    } else if (overlay.kind === "prompt") {
+      overlay.prompt.close()
+      this.renderer.root.remove(overlay.prompt)
+      overlay.prompt.destroy()
+    }
+    this.overlay = { kind: "none" }
+    this.renderer.requestRender()
+  }
+
+  // Completions touch only app-global state (flash + seq-guarded refreshFleet); stale ones are harmless.
+  private async runAction(action: "kill" | "respawn", agent: ModelAgentView): Promise<void> {
+    try {
+      if (action === "kill") {
+        await this.deps.cco.kill(agent.id)
+        this.setFlash(`killed ${agent.name}`)
+      } else {
+        await this.deps.cco.respawn(agent.id)
+        this.setFlash(`respawned ${agent.name}`)
+      }
+      void this.refreshFleet()
+    } catch (err) {
+      this.setFlash(toError(err).message)
+    }
+  }
+
+  private async runMessage(agent: ModelAgentView, text: string): Promise<void> {
+    try {
+      await this.deps.cco.sendMessage(agent.id, text)
+      this.setFlash(`sent to ${agent.name}`)
+      void this.refreshFleet()
+    } catch (err) {
+      this.setFlash(toError(err).message)
+    }
+  }
+
+  // Overlay set before suspend(); resume + poller restart + overlay clear happen in finally so a
+  // spawn rejection still restores the renderer. The attach overlay guards re-entry.
+  private async runAttach(agent: ModelAgentView): Promise<void> {
+    this.overlay = { kind: "attach" }
+    this.fleetPoller.stop()
+    this.timelinePoller?.stop()
+    this.renderer.suspend()
+    let result: { readonly code: number; readonly stderr: string }
+    try {
+      result = await this.deps.attach(agent.id)
+    } catch (err) {
+      result = { code: 1, stderr: toError(err).message }
+    } finally {
+      this.renderer.resume()
+      this.fleetPoller.start()
+      this.timelinePoller?.start()
+      this.overlay = { kind: "none" }
+    }
+    if (result.code !== 0) this.setFlash(`attach failed: ${result.stderr}`)
+    void this.refreshFleet()
+    void this.refreshCapture()
+  }
+
+  private setFlash(message: string): void {
+    this.flash = message
+    this.renderFooter()
+    this.renderer.requestRender()
   }
 
   private async pollFleet(): Promise<StampedFleetOutcome> {
@@ -338,6 +553,10 @@ class App {
   }
 
   private renderFooter(): void {
+    if (this.flash !== null) {
+      this.footer.content = new StyledText([fg(FLASH_COLOR)(this.flash)])
+      return
+    }
     this.footer.content = new StyledText([dim(this.state.view === "agent" ? AGENT_FOOTER : FLEET_FOOTER)])
   }
 }

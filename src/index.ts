@@ -15,6 +15,13 @@ async function wakeDaemon(): Promise<void> {
   await Bun.spawn(["cco", "fleet", "status"], { stdout: "ignore", stderr: "ignore" }).exited
 }
 
+// Hand the real TTY to `cco agent attach <id>`; the app suspends its renderer around this.
+async function attachAgent(agentId: string): Promise<{ code: number; stderr: string }> {
+  const proc = Bun.spawn(["cco", "agent", "attach", agentId], { stdin: "inherit", stdout: "inherit", stderr: "pipe" })
+  const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
+  return { code, stderr }
+}
+
 const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: true })
 
 const cco = new CcoClient({ homeDir: homedir(), fetchFn: fetch, wake: wakeDaemon })
@@ -33,6 +40,7 @@ async function shutdown(): Promise<void> {
 const app = buildApp(renderer, {
   cco,
   viz: vizPool,
+  attach: attachAgent,
   pollIntervalMs: POLL_INTERVAL_MS,
   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   onQuit: () => void shutdown(),

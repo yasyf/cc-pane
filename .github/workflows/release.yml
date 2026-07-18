@@ -1,0 +1,16 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: yasyf/homebrew-tap/.github/workflows/release-bun.yml@bun-v1
+    secrets: inherit
+    with:
+      cask-template: .github/formula/cc-pane.rb.tmpl
+      smoke-command: "--version"

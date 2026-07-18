@@ -4,9 +4,20 @@
 import { createCliRenderer } from "@opentui/core"
 import { homedir } from "node:os"
 
+import pkg from "../package.json"
 import { buildApp } from "./app.ts"
 import { CcoClient } from "./data/cco.ts"
 import { VizPool, spawnVizProcess } from "./data/ccnotes.ts"
+
+const arg = Bun.argv[2]
+if (arg === "--version" || arg === "-v") {
+  console.log(pkg.version)
+  process.exit(0)
+}
+if (arg === "--help" || arg === "-h") {
+  console.log(`cc-pane ${pkg.version} — your whole Claude Code fleet in one pane of glass\nUsage: cc-pane [--version | -v] [--help | -h]`)
+  process.exit(0)
+}
 
 const POLL_INTERVAL_MS = 2000
 

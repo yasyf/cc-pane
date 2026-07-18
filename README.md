@@ -8,9 +8,21 @@
 ## Get started
 
 ```bash
+brew install yasyf/tap/cc-pane
+cc-pane
+```
+
+Homebrew pulls the `cc-orchestrate` and `cc-notes` companions in as dependencies.
+
+<details>
+<summary>From a clone</summary>
+
+```bash
 git clone https://github.com/yasyf/cc-pane && cd cc-pane && bun install
 bun start
 ```
+
+</details>
 
 The full-screen dashboard opens (Ctrl+C exits):
 
@@ -27,9 +39,8 @@ The full-screen dashboard opens (Ctrl+C exits):
 Driving with an agent? Paste this:
 
 ```text
-Set up cc-pane: run `git clone https://github.com/yasyf/cc-pane && cd cc-pane && bun install`, then launch the dashboard with `bun start`.
-Confirm the full-screen cc-pane frame renders and Ctrl+C exits cleanly.
-Then read src/app.ts and report where the cc-orchestrate session list plugs into the renderable tree.
+Install cc-pane (`brew install yasyf/tap/cc-pane`) and launch the dashboard by running `cc-pane`.
+Confirm the full-screen cc-pane frame renders, Ctrl+C exits cleanly, and `cc-pane --version` prints the release version.
 ```
 
 ---
@@ -41,7 +52,7 @@ Then read src/app.ts and report where the cc-orchestrate session list plugs into
 Five Claude Code sessions means five terminal tabs, and the one stuck on a permission prompt looks exactly like the four that are working. Put every session in one pane:
 
 ```bash
-bun start
+cc-pane
 ```
 
 One frame, every session, status first. Today that frame is the placeholder from Get started; the cc-orchestrate session list is milestone one.

@@ -8,6 +8,7 @@ fragments = [
   "cc-pane-style",
   "cc-pane-hook-style",
   "cc-skills:version-control",
+  "releases",
 ]
 
 [sources.cc-skills]

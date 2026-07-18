@@ -1,0 +1,46 @@
+# Rendered by release-bun.yml from .github/formula/cc-pane.rb.tmpl — edit the template, not the tap copy.
+cask "cc-pane" do
+  version "__VERSION__"
+
+  on_macos do
+    on_arm do
+      sha256 "__SHA_DARWIN_ARM64__"
+      url "https://github.com/yasyf/cc-pane/releases/download/v#{version}/cc-pane-v#{version}-darwin-arm64.zip"
+    end
+    on_intel do
+      sha256 "__SHA_DARWIN_X64__"
+      url "https://github.com/yasyf/cc-pane/releases/download/v#{version}/cc-pane-v#{version}-darwin-x64.zip"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      sha256 "__SHA_LINUX_ARM64__"
+      url "https://github.com/yasyf/cc-pane/releases/download/v#{version}/cc-pane-v#{version}-linux-arm64.zip"
+    end
+    on_intel do
+      sha256 "__SHA_LINUX_X64__"
+      url "https://github.com/yasyf/cc-pane/releases/download/v#{version}/cc-pane-v#{version}-linux-x64.zip"
+    end
+  end
+
+  name "cc-pane"
+  desc "Your whole Claude Code fleet in one pane of glass"
+  homepage "https://github.com/yasyf/cc-pane"
+
+  depends_on cask: "cc-orchestrate"
+  depends_on formula: "cc-notes"
+
+  binary "cc-pane"
+
+  postflight do
+    if OS.mac?
+      system_command "/usr/bin/xattr",
+                     args: ["-dr", "com.apple.quarantine", "#{staged_path}/cc-pane"]
+    end
+  end
+
+  livecheck do
+    skip "Auto-generated on release."
+  end
+end

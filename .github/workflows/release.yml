@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   release:
-    uses: yasyf/homebrew-tap/.github/workflows/release-bun.yml@bun-v1
+    uses: yasyf/homebrew-tap/.github/workflows/release-bun.yml@a9ecff42ac7721452905327071316bca2b49bb68
     secrets: inherit
     with:
       cask-template: .github/formula/cc-pane.rb.tmpl

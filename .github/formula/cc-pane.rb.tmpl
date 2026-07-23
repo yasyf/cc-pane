@@ -33,13 +33,6 @@ cask "cc-pane" do
 
   binary "cc-pane"
 
-  postflight do
-    if OS.mac?
-      system_command "/usr/bin/xattr",
-                     args: ["-dr", "com.apple.quarantine", "#{staged_path}/cc-pane"]
-    end
-  end
-
   livecheck do
     skip "Auto-generated on release."
   end
